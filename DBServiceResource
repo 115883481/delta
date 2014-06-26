@@ -1,0 +1,262 @@
+package uitl;
+
+import java.io.InputStream;
+import java.util.List;
+import java.util.Map;
+
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.UriInfo;
+import org.restlet.representation.Representation;
+
+import com.ibm.json.java.JSONObject;
+import com.mongodb.BasicDBObject;
+import com.mongodb.DBCollection;
+import com.mongodb.DBObject;
+
+@Path("/service")
+public class DBServiceResource {
+	@POST
+	@Path("/db/{name}")
+	@Produces("application/json")
+	public String createDB(@PathParam("name") String name) {
+		String result=Util.createResult(true, "");
+		try {
+			MongoModel model = getInStance();
+			Util.cursor2String(model.createCollection(model.createDB(name),"temp").find());
+		} catch (Exception e) {
+			e.printStackTrace();
+			result =Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	@DELETE
+	@Path("/db/{dbName}")
+	@Produces("application/json")
+	public String dropDB(@PathParam("dbName") String dbName){
+		String result=Util.createResult(true, "");
+		try {
+			MongodbModel model = getInStance();
+			model.dropDB(dbName);
+		} catch (Exception e) {
+			e.printStackTrace();
+			result=Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	@PUT
+	@Path("/table/{dbName}/{tableName}")
+	@Produces("application/json")
+	public String CreateTable(Representation request,@PathParam("dbName") String dbName,@PathParam("tableName") String tableName) {
+		try {
+			MongodbModel model = getInStance();
+			DBCollection collection = model.createCollection(model.connDB(dbName),tableName);
+			String json = request.getText();
+			JSONObject obj =JSONObject.parse(json);
+			Map map = Util.JSONObject2Map(obj);
+			BasicDBObject  dobj= new BasicDBObject(map);
+			collection.insert(dobj);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return Util.createResult(false, e.getMessage());
+		}
+		return Util.createResult(true, "");
+	}
+	@POST
+	@Path("/table/{dbName}/{tableName}")
+	@Produces("aplication/json")
+	public String CreateTable(@PathParam("dbName") String dbName,@PathParam("tableName") String tableName) {
+		String result=Util.createResult(true, "");
+		try {
+			MongodbModel model = getInStance();
+			model.createCollection(model.connDB(dbName),tableName).insert(new BasicDBObject());
+		} catch (Exception e) {
+			e.printStackTrace();
+			result =Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	@DELETE
+	@Path("/table/{dbName}/{tableName}")
+	@Produces("application/json")
+	public String dropTable(@PathParam("dbName") String dbName,@PathParam("tableName") String tableName){
+		String result =Util.createResult(true, "");
+		try {
+			MongodbModel model = getInStance();
+			model.dropCollection(model.connDB(dbName),tableName);
+		} catch (Exception e) {
+			e.printStackTrace();
+			result=Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	//FIXME:  表示可以用JsonRepresentation find方法也是用的post有待修改
+	@POST
+	@Path("/data/{dbName}/{tableName}/query")
+	@Produces("application/json")
+	public String findOne(Representation request,@PathParam("dbName") String dbName,@PathParam("tableName") String tableName) {
+		String result="";
+		try {
+			String json = request.getText();
+			JSONObject obj =JSONObject.parse(json);
+			Map map = Util.JSONObject2Map(obj);
+ 			BasicDBObject query = new BasicDBObject(map);
+ 			MongodbModel model = getInStance();
+ 			DBObject temp = model.findOne(model.connDB(dbName),tableName,query);
+ 			if(temp==null){
+ 				result =Util.createResult(true, "", "{}");
+ 			}else{
+ 				result =Util.createResult(true, "", temp.toString());
+ 			}
+ 			
+		} catch (Exception e) {
+			e.printStackTrace();
+			result = Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	@POST
+	@Path("/data/{dbName}/{tableName}")
+	@Produces("application/json")
+	public String find(Representation request,@PathParam("dbName") String dbName,@PathParam("tableName") String tableName) {
+		String result="";
+		try {
+			String json = request.getText();
+			JSONObject obj =JSONObject.parse(json);
+			Map map = Util.JSONObject2Map(obj);
+ 			BasicDBObject query = new BasicDBObject(map);
+ 			MongodbModel model = getInStance();
+ 			result=model.findObjs(model.connDB(dbName),tableName, query).toString();
+ 			result = Util.createResult(true,"",result);
+		} catch (Exception e) {
+			e.printStackTrace();
+			result =  Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	//FIXME 多条件查询 时 接受参数类型
+	@GET
+	@Path("/data/{dbName}/{tableName}")
+	@Produces("application/json")
+	public  String queryData(@Context UriInfo uriInfo){
+		String result="";
+		try {
+			String dbName = uriInfo.getPathSegments().get(2).getPath();
+			String tableName=uriInfo.getPathSegments().get(3).getPath();
+			MultivaluedMap<String,String> matrixParameters = uriInfo.getPathSegments().get(3).getMatrixParameters();
+			MultivaluedMap<String,String> queryParameters = uriInfo.getQueryParameters();
+			List<String> list = queryParameters.get("limit");
+			//TODO 查询个数不能为0 没有意义
+			int limit=0;
+			if(list.size()>0){
+				limit=Integer.parseInt(list.get(0));
+			}
+			Map<String,String> params = Util.MulitMap2Map(matrixParameters);
+			BasicDBObject obj = new BasicDBObject(params);
+			MongodbModel model = getInStance();
+			result = model.findObjs(model.connDB(dbName), tableName, obj,limit).toString();
+			result = Util.createResult(true,"",result);
+		} catch (Exception e) {
+			e.printStackTrace();
+			result =  Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	@POST
+	@Path("/data/{dbName}/{tableName}/add")
+	@Produces("application/json")
+	public String addData(Representation request,@PathParam("dbName") String dbName,@PathParam("tableName") String tableName) {
+		try {
+			String json = request.getText();
+			JSONObject obj =JSONObject.parse(json);
+			Map map = Util.JSONObject2Map(obj);
+ 			BasicDBObject dbobj = new BasicDBObject(map);
+ 			MongodbModel model = getInStance();
+ 			model.addObj(model.connDB(dbName),tableName, dbobj);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return Util.createResult(false, e.getMessage());
+		}
+		return Util.createResult(true, "");
+	}
+	
+	@DELETE
+	@Path("/data/{dbName}/{tableName}/clear")
+	@Produces("application/json")
+	public String clearTable(@PathParam("dbName") String dbName,@PathParam("tableName") String tableName){
+		String result =Util.createResult(true, "");
+		try {
+			MongodbModel model = getInStance();
+			model.remove(model.connDB(dbName),tableName,new BasicDBObject());
+		} catch (Exception e) {
+			result=Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	//POST继承 是否可以
+	@POST
+	@Path("/data/{dbName}/{tableName}/delete")
+	@Produces("application/json")
+	public String deleteData(Representation request,@PathParam("dbName") String dbName,@PathParam("tableName") String tableName) {
+		String result =Util.createResult(true, "");
+		try {
+			String json = request.getText();
+			JSONObject obj =JSONObject.parse(json);
+			Map map = Util.JSONObject2Map(obj);
+ 			BasicDBObject dbobj = new BasicDBObject(map);
+ 			MongodbModel model = getInStance();
+ 			model.remove(model.connDB(dbName),tableName, dbobj);
+		} catch (Exception e) {
+			e.printStackTrace();
+			result=Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	@PUT
+	@Path("/data/{dbName}/{tableName}/update")
+	@Produces("application/json")
+	public String updateData(Representation request,@PathParam("dbName") String dbName,@PathParam("tableName") String tableName,
+						@QueryParam("key") String key,@QueryParam("value") String value){
+		String result =Util.createResult(true, "");
+		if(Util.isNull(key)||Util.isNull(value)){
+			return Util.createResult(false, "Query cann't be null");
+		}
+		try {
+			String json = request.getText();
+			JSONObject obj =JSONObject.parse(json);
+			Map map = Util.JSONObject2Map(obj);
+ 			BasicDBObject dbobj = new BasicDBObject(map);
+ 			BasicDBObject query = new BasicDBObject(key,value);
+ 			MongodbModel model = getInStance();
+ 			model.update(model.connDB(dbName),tableName, query,dbobj);
+		} catch (Exception e) {
+			e.printStackTrace();
+			result=Util.createResult(false, e.getMessage());
+		}
+		return result;
+	}
+	//FIXME 待定GridFS
+	public void createFs(InputStream in){
+		try {
+			MongodbModel model = getInStance();
+			model.createFile(model.connDB(""), "prefix", in, "temp");
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+	}
+	
+	private static MongodbModel  getInStance() throws Exception{
+		
+		MongodbModel model =MongodbModel.getInstance("", 123);
+		return model;
+	}
+}
